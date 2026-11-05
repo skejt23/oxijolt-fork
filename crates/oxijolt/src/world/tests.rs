@@ -282,3 +282,71 @@ fn contact_distances_are_validated() {
         }
     }
 }
+
+#[test]
+fn linear_cast_settings_are_validated() {
+    type Setter = fn(WorldSettings, f32) -> WorldSettings;
+    let setters: [(&str, Setter); 2] = [
+        (
+            "linear_cast_threshold",
+            WorldSettings::linear_cast_threshold,
+        ),
+        (
+            "linear_cast_max_penetration",
+            WorldSettings::linear_cast_max_penetration,
+        ),
+    ];
+    for (name, set) in setters {
+        for valid in [0.0, -0.0, 0.25, 0.75, 20.0, f32::MAX] {
+            assert_eq!(
+                set(WorldSettings::default(), valid).validate(),
+                Ok(()),
+                "{name}({valid:?}) was refused"
+            );
+        }
+        for invalid in [
+            -f32::from_bits(1),
+            -0.001,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            assert!(
+                matches!(
+                    set(WorldSettings::default(), invalid).validate(),
+                    Err(WorldError::InvalidValue(_))
+                ),
+                "{name}({invalid:?}) was accepted"
+            );
+        }
+    }
+}
+
+#[test]
+fn linear_cast_settings_reach_jolt_and_leave_the_others_at_default() {
+    let settings = WorldSettings::default()
+        .linear_cast_threshold(0.0)
+        .linear_cast_max_penetration(0.0001);
+    let world = PhysicsWorld::new(settings).unwrap();
+    // SAFETY: the world's system is live and nothing steps it.
+    let read = unsafe { physics_settings(world.system.as_ptr()) };
+    let mut expected = jolt_default_physics_settings(10, 2, 0.02, 0.02);
+    expected.linearCastThreshold = 0.0;
+    expected.linearCastMaxPenetration = 0.0001;
+    assert_eq!(format!("{read:?}"), format!("{expected:?}"));
+    assert_eq!(
+        (
+            world.linear_cast_threshold().to_bits(),
+            world.linear_cast_max_penetration().to_bits()
+        ),
+        (0.0f32.to_bits(), 0.0001f32.to_bits())
+    );
+    let default = PhysicsWorld::new(WorldSettings::default()).unwrap();
+    assert_eq!(
+        (
+            default.linear_cast_threshold().to_bits(),
+            default.linear_cast_max_penetration().to_bits()
+        ),
+        (0.75f32.to_bits(), 0.25f32.to_bits())
+    );
+}

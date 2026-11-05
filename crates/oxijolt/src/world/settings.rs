@@ -4,6 +4,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::limits;
+use crate::math::is_finite_non_negative;
 use crate::{CollisionLayers, JobSystem, Vec3, WorldError};
 
 /// Which job system a world runs its jobs on.
@@ -114,6 +115,8 @@ pub struct WorldSettings {
     pub(super) position_steps: u32,
     pub(super) penetration_slop: f32,
     pub(super) speculative_contact_distance: f32,
+    pub(super) linear_cast_threshold: f32,
+    pub(super) linear_cast_max_penetration: f32,
 }
 
 /// Jolt's thread pool with one worker, or on wasm32, which has no threads, Jolt's single-threaded
@@ -141,6 +144,8 @@ impl Default for WorldSettings {
             position_steps: 2,
             penetration_slop: 0.02,
             speculative_contact_distance: 0.02,
+            linear_cast_threshold: 0.75,
+            linear_cast_max_penetration: 0.25,
         }
     }
 }
@@ -406,6 +411,47 @@ impl WorldSettings {
         self
     }
 
+    /// How far a [`MotionQuality::LinearCast`](crate::MotionQuality::LinearCast) body must move
+    /// in one collision step before Jolt casts it, as a fraction of its shape's inner radius
+    /// (Jolt `PhysicsSettings::mLinearCastThreshold`). Shorter moves are left to the discrete
+    /// contacts; 0 casts every move, and a large value casts none.
+    ///
+    /// Finite and at least 0; [`PhysicsWorld::new`] refuses other values with
+    /// [`WorldError::InvalidValue`]. Default 0.75, Jolt's. Set once, when the world is created.
+    /// See [docs/limits.md].
+    ///
+    /// A world reads it back with [`PhysicsWorld::linear_cast_threshold`].
+    ///
+    /// [`PhysicsWorld::new`]: crate::PhysicsWorld::new
+    /// [docs/limits.md]: https://github.com/pockerhead/oxijolt/blob/main/docs/limits.md#linear-cast-settings
+    /// [`PhysicsWorld::linear_cast_threshold`]: crate::PhysicsWorld::linear_cast_threshold
+    #[must_use]
+    pub fn linear_cast_threshold(mut self, value: f32) -> Self {
+        self.linear_cast_threshold = value;
+        self
+    }
+
+    /// How deep a cast [`MotionQuality::LinearCast`](crate::MotionQuality::LinearCast) body may
+    /// end up in what it hits, as a fraction of its shape's inner radius (Jolt
+    /// `PhysicsSettings::mLinearCastMaxPenetration`). Jolt takes the smaller of this depth and
+    /// the [`penetration_slop`](Self::penetration_slop); smaller values stop the body further
+    /// out and leave less for the position pass to correct.
+    ///
+    /// Finite and at least 0; [`PhysicsWorld::new`] refuses other values with
+    /// [`WorldError::InvalidValue`]. Default 0.25, Jolt's. Set once, when the world is created.
+    /// See [docs/limits.md].
+    ///
+    /// A world reads it back with [`PhysicsWorld::linear_cast_max_penetration`].
+    ///
+    /// [`PhysicsWorld::new`]: crate::PhysicsWorld::new
+    /// [docs/limits.md]: https://github.com/pockerhead/oxijolt/blob/main/docs/limits.md#linear-cast-settings
+    /// [`PhysicsWorld::linear_cast_max_penetration`]: crate::PhysicsWorld::linear_cast_max_penetration
+    #[must_use]
+    pub fn linear_cast_max_penetration(mut self, value: f32) -> Self {
+        self.linear_cast_max_penetration = value;
+        self
+    }
+
     pub(crate) fn validate(&self) -> Result<(), WorldError> {
         let invalid = |what| Err(WorldError::InvalidValue(what));
         if !(1..=Self::MAX_BODIES).contains(&self.max_bodies) {
@@ -437,6 +483,12 @@ impl WorldSettings {
             return invalid(
                 "speculative_contact_distance must be between 0 and limits::MAX_SHAPE_EXTENT",
             );
+        }
+        if !is_finite_non_negative(self.linear_cast_threshold) {
+            return invalid("linear_cast_threshold must be finite and at least 0");
+        }
+        if !is_finite_non_negative(self.linear_cast_max_penetration) {
+            return invalid("linear_cast_max_penetration must be finite and at least 0");
         }
         self.layers.validate()
     }

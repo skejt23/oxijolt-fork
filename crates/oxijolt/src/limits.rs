@@ -272,7 +272,10 @@ pub const MAX_LEVER_ARM_RATIO: f32 = 1000.0;
 
 /// Largest velocity or position step override of a constraint
 /// ([`HingeConstraintSettings::velocity_steps_override`](crate::HingeConstraintSettings::velocity_steps_override)
-/// and the same on every constraint kind), 255: Jolt asserts the overrides below 256 and keeps
+/// and the same on every constraint kind) or of a body
+/// ([`BodySettings::velocity_steps_override`](crate::BodySettings::velocity_steps_override),
+/// [`position_steps_override`](crate::BodySettings::position_steps_override)), 255: Jolt asserts
+/// the overrides below 256 and keeps
 /// them in 8 bits, like the world's step counts ([`WorldSettings::MAX_SOLVER_STEPS`]).
 ///
 /// See [docs/limits.md#solver-step-counts].

@@ -6,6 +6,23 @@ All notable changes to this fork. The format follows [Keep a Changelog](https://
 
 ### Added
 
+- Opt-in ragdoll self-collision: `RagdollSettings::with_self_collision` takes a
+  `RagdollSelfCollision`. `None` (the default, and what `new` and `new_stabilized` build) disables
+  every pair of parts as before; `ExceptParentChild { also_disabled }` disables only each part with
+  its parent and the listed pairs, so the other parts of one ragdoll collide (Jolt's
+  `DisableParentChildCollisions`, with the bind-pose overlap census left to the caller). A listed
+  pair that repeats a part or names a part out of range is refused before Jolt is called. Parts
+  still use the ragdoll's own collision group and refuse a caller's.
+- Per-body solver step overrides: `BodySettings::velocity_steps_override` and
+  `position_steps_override` (Jolt `BodyCreationSettings::mNumVelocityStepsOverride`,
+  `mNumPositionStepsOverride`), 0 by default, at most `limits::MAX_SOLVER_STEPS_OVERRIDE`, also on
+  ragdoll parts. Jolt solves an island with the largest count of its contacts and constraints, and
+  a body's override counts through its contacts only, so the joints of a ragdoll in free flight
+  keep their own count until a part touches something.
+- `WorldSettings::linear_cast_threshold` and `linear_cast_max_penetration` set Jolt's
+  `PhysicsSettings::mLinearCastThreshold` and `mLinearCastMaxPenetration` (fractions of a shape's
+  inner radius, finite and at least 0, Jolt's 0.75 and 0.25 by default) when the world is
+  created; `PhysicsWorld::linear_cast_threshold` and `linear_cast_max_penetration` read them back.
 - `Shape::local_bounds` returns a shape's bounding box as `(min, max)` in its own space, relative to
   its centre of mass, convex radius included (Jolt `Shape::GetLocalBounds`); add
   `Shape::center_of_mass` for the box about the shape's origin. Refs #14.

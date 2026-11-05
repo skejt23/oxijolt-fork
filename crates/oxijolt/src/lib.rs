@@ -250,8 +250,8 @@ pub use query::{
 };
 pub use ragdoll::{
     JointReading, JointTransform, MappedSkeleton, RagdollId, RagdollJoint, RagdollMut, RagdollPart,
-    RagdollRef, RagdollSettings, SettleDetector, Skeleton, SkeletonJoint, SkeletonMapper,
-    SkeletonPose, TranslationLocks,
+    RagdollRef, RagdollSelfCollision, RagdollSettings, SettleDetector, Skeleton, SkeletonJoint,
+    SkeletonMapper, SkeletonPose, TranslationLocks,
 };
 pub use shape::{
     CompoundChild, CompoundSubShape, DroppedTriangles, HeightFieldSettings, MassProperties,

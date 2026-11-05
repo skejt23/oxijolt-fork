@@ -737,9 +737,18 @@ factor, initial velocity) at the part's bind pose in world space, and the joint 
   knees) and `SixDof` (hips). By default their frames are given in world space at the bind pose.
   In a joint's frame X is the twist or hinge axis and Y and Z are the swing axes. A cone swing has
   symmetric limits; `SwingType::Pyramid` allows a different range on each side, which a hip needs.
-- **Collisions.** Parts of one ragdoll never collide with each other: every pair of parts is
-  disabled in a group filter, and each ragdoll gets its own group, so two ragdolls still collide.
-  To keep ragdolls out of the main simulation, put them in a second `PhysicsWorld` whose static
+- **Collisions.** By default parts of one ragdoll never collide with each other: every pair of
+  parts is disabled in a group filter, and each ragdoll gets its own group, so two ragdolls still
+  collide. `RagdollSettings::with_self_collision` with
+  `RagdollSelfCollision::ExceptParentChild { also_disabled }` disables only each part with its
+  parent and the listed pairs (for example the pairs that already touch in the bind pose), so a
+  limb cannot pass through the torso.
+- **Solver steps per part.** `BodySettings::velocity_steps_override` and
+  `position_steps_override` on the parts raise the solver steps of the ragdoll's island through
+  the parts' contacts only: Jolt takes the largest count of an island's contacts and constraints.
+  In free flight the joints count their own `velocity_steps_override` (or the world's); set those
+  as well to stiffen the joints in the air.
+- **Separate worlds.** To keep ragdolls out of the main simulation, put them in a second `PhysicsWorld` whose static
   bodies are made from the same `Shape` handles as the main world's: Jolt shares a shape, it does
   not copy it.
 - **Gravity.** For the game's own gravity, give every part `gravity_factor(0.0)` and add

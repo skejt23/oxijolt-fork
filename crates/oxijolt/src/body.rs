@@ -192,6 +192,8 @@ pub struct BodySettings {
     allow_sleeping: bool,
     activation: Activation,
     enhanced_internal_edge_removal: bool,
+    velocity_steps_override: u32,
+    position_steps_override: u32,
     pub(crate) allowed_dofs: AllowedDofs,
     pub(crate) sensor: bool,
     pub(crate) user_data: u64,
@@ -219,6 +221,8 @@ impl Default for BodySettings {
             allow_sleeping: true,
             activation: Activation::Activate,
             enhanced_internal_edge_removal: false,
+            velocity_steps_override: 0,
+            position_steps_override: 0,
             allowed_dofs: AllowedDofs::ALL,
             sensor: false,
             user_data: 0,
@@ -257,6 +261,11 @@ pub(crate) const ANGULAR_DAMPING_RULE: &str = "angular damping must be finite an
 /// Why a sensor keeps [`MotionQuality::Discrete`]: Jolt runs no continuous collision detection
 /// for sensors (`PhysicsSystem.cpp:1657`).
 pub(crate) const SENSOR_QUALITY_RULE: &str = "a sensor uses MotionQuality::Discrete";
+
+/// What [`BodySettings::velocity_steps_override`] and
+/// [`position_steps_override`](BodySettings::position_steps_override) must satisfy.
+const STEPS_OVERRIDE_RULE: &str =
+    "body step overrides must be at most limits::MAX_SOLVER_STEPS_OVERRIDE";
 
 /// What [`BodySettings::allowed_dofs`] must satisfy (crate policy): without a translation axis
 /// Jolt gives the body a zero inverse mass, and its unit-sphere inertia fallback (`2.5 / mass`)
@@ -480,6 +489,40 @@ impl BodySettings {
         self
     }
 
+    /// Velocity iterations the solver runs for the contacts of this dynamic body, at most
+    /// [`limits::MAX_SOLVER_STEPS_OVERRIDE`] (Jolt
+    /// `BodyCreationSettings::mNumVelocityStepsOverride`). Default 0, which asks for the world's
+    /// [`WorldSettings::velocity_steps`](crate::WorldSettings::velocity_steps). Fixed for the
+    /// body's life; [`PhysicsWorld::create_body`] refuses a larger value with
+    /// [`BodyError::InvalidValue`].
+    ///
+    /// Jolt solves an island with the largest count of its contacts and constraints. A contact
+    /// counts the overrides of its dynamic bodies, and the world's count when one of them has
+    /// none; a constraint counts its own
+    /// ([`HingeConstraintSettings::velocity_steps_override`](crate::HingeConstraintSettings::velocity_steps_override)
+    /// and the same on every kind). So a body's override acts only while the body touches
+    /// something: the joints of a ragdoll in free flight keep their own count, and every body in
+    /// an island with the body gets the larger count. Ragdoll parts take it as any other body.
+    ///
+    /// [`PhysicsWorld::create_body`]: crate::PhysicsWorld::create_body
+    #[must_use]
+    pub fn velocity_steps_override(mut self, value: u32) -> Self {
+        self.velocity_steps_override = value;
+        self
+    }
+
+    /// Position iterations the solver runs for the contacts of this dynamic body, at most
+    /// [`limits::MAX_SOLVER_STEPS_OVERRIDE`] (Jolt
+    /// `BodyCreationSettings::mNumPositionStepsOverride`). Default 0, which asks for the world's
+    /// [`WorldSettings::position_steps`](crate::WorldSettings::position_steps), so 0 cannot turn
+    /// the position pass off for one body. Counted per island as described at
+    /// [`velocity_steps_override`](Self::velocity_steps_override). Fixed for the body's life.
+    #[must_use]
+    pub fn position_steps_override(mut self, value: u32) -> Self {
+        self.position_steps_override = value;
+        self
+    }
+
     /// The degrees of freedom the body may move in, fixed for its life. Default
     /// [`AllowedDofs::ALL`].
     ///
@@ -616,6 +659,13 @@ impl BodySettings {
         }
         if !is_gravity_factor(self.gravity_factor) {
             return invalid(limits::GRAVITY_FACTOR_RULE);
+        }
+        // Jolt asserts both overrides below 256 and keeps them in 8 bits
+        // (`Body/MotionProperties.h:192,196`).
+        if self.velocity_steps_override > limits::MAX_SOLVER_STEPS_OVERRIDE
+            || self.position_steps_override > limits::MAX_SOLVER_STEPS_OVERRIDE
+        {
+            return invalid(STEPS_OVERRIDE_RULE);
         }
         if let Some(mass) = self.mass {
             if !is_mass(mass.mass()) {
@@ -766,6 +816,14 @@ impl CreationSettings {
             JPH_BodyCreationSettings_SetEnhancedInternalEdgeRemoval(
                 ptr,
                 settings.enhanced_internal_edge_removal,
+            );
+            JPH_BodyCreationSettings_SetNumVelocityStepsOverride(
+                ptr,
+                settings.velocity_steps_override,
+            );
+            JPH_BodyCreationSettings_SetNumPositionStepsOverride(
+                ptr,
+                settings.position_steps_override,
             );
             JPH_BodyCreationSettings_SetAllowedDOFs(ptr, settings.allowed_dofs.to_jph());
             JPH_BodyCreationSettings_SetIsSensor(ptr, settings.sensor);

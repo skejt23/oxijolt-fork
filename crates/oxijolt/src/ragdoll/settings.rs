@@ -237,12 +237,60 @@ pub struct RagdollPart<'a> {
     pub joint: Option<RagdollJoint>,
 }
 
+/// Which parts of one ragdoll collide with each other.
+///
+/// Each part is sub group `index` of the ragdoll's own [`GroupFilterTable`](crate::GroupFilterTable);
+/// this chooses the pairs the table disables. Parts of different ragdolls collide either way, and
+/// a part still takes no caller collision group.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum RagdollSelfCollision {
+    /// No two parts collide: every pair is disabled. What [`RagdollSettings::new`] and
+    /// [`RagdollSettings::new_stabilized`] build.
+    #[default]
+    None,
+    /// Every pair collides except each part with its parent part and the listed pairs of part
+    /// indices, in either order (Jolt `RagdollSettings::DisableParentChildCollisions`, with the
+    /// pairs that already touch in the bind pose found by the caller and listed here).
+    ExceptParentChild {
+        /// Further pairs that never collide: two different part indices each, below the part
+        /// count. A pair may repeat a parent/child pair or another listed pair.
+        also_disabled: Vec<(u32, u32)>,
+    },
+}
+
+impl RagdollSelfCollision {
+    /// The pairs of part indices the ragdoll's table disables, for `parents` (a validated
+    /// skeleton: every parent precedes its child). Refuses a listed pair that repeats a part or
+    /// names a part at or above the part count, which Jolt only asserts.
+    fn disabled_pairs(&self, parents: &[Option<u32>]) -> Result<Vec<(u32, u32)>, RagdollError> {
+        let count = parents.len() as u32;
+        match self {
+            Self::None => Ok((0..count)
+                .flat_map(|a| (a + 1..count).map(move |b| (a, b)))
+                .collect()),
+            Self::ExceptParentChild { also_disabled } => {
+                let valid = |&(a, b): &(u32, u32)| a != b && a < count && b < count;
+                if !also_disabled.iter().all(valid) {
+                    return Err(RagdollError::InvalidValue(
+                        "a disabled pair names two different parts of the ragdoll",
+                    ));
+                }
+                Ok((0..count)
+                    .filter_map(|part| parents[part as usize].map(|parent| (parent, part)))
+                    .chain(also_disabled.iter().copied())
+                    .collect())
+            }
+        }
+    }
+}
+
 /// The settings of a ragdoll (Jolt `RagdollSettings`): a skeleton, one body per joint and the
 /// constraints between them.
 ///
-/// Parts of one ragdoll never collide with each other: each part is in its own sub group of a
-/// group filter that disables every pair, and each ragdoll gets its own group, so different
-/// ragdolls still collide. Joint priorities grow toward the root (Jolt
+/// By default parts of one ragdoll never collide with each other: each part is in its own sub
+/// group of a group filter that disables every pair, and each ragdoll gets its own group, so
+/// different ragdolls still collide. [`with_self_collision`](Self::with_self_collision) lets
+/// chosen pairs collide ([`RagdollSelfCollision`]). Joint priorities grow toward the root (Jolt
 /// `CalculateConstraintPriorities`).
 ///
 /// # Joint limits on impact
@@ -299,7 +347,7 @@ impl RagdollSettings {
     /// [`SpringSettings`](crate::SpringSettings)). Object layers are checked when a ragdoll is
     /// created.
     pub fn new(skeleton: &Skeleton, parts: &[RagdollPart<'_>]) -> Result<Self, RagdollError> {
-        Self::build(skeleton, parts, false)
+        Self::build(skeleton, parts, false, &RagdollSelfCollision::None)
     }
 
     /// Like [`new`](Self::new), then Jolt's `Stabilize`: it keeps the total mass of every chain
@@ -313,15 +361,69 @@ impl RagdollSettings {
         skeleton: &Skeleton,
         parts: &[RagdollPart<'_>],
     ) -> Result<Self, RagdollError> {
-        Self::build(skeleton, parts, true)
+        Self::build(skeleton, parts, true, &RagdollSelfCollision::None)
+    }
+
+    /// Like [`new`](Self::new), or [`new_stabilized`](Self::new_stabilized) when `stabilize` is
+    /// set, with the pairs of parts that collide with each other chosen by `self_collision`.
+    /// [`RagdollSelfCollision::None`] builds the same settings as those constructors.
+    ///
+    /// ```
+    /// use oxijolt::*;
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// // A chain of three parts: the root, its child and a grandchild.
+    /// let skeleton = Skeleton::new(&[
+    ///     SkeletonJoint { name: "a", parent: None },
+    ///     SkeletonJoint { name: "b", parent: Some(0) },
+    ///     SkeletonJoint { name: "c", parent: Some(1) },
+    /// ])?;
+    /// let shape = Shape::new_sphere(0.2)?;
+    /// let at = |y: f32| RVec3::new(0.0, Real::from(y), 0.0);
+    /// let joint = |y: f32| {
+    ///     Some(RagdollJoint::SwingTwist(SwingTwistConstraintSettings::new(
+    ///         at(y),
+    ///         Vec3::new(0.0, 1.0, 0.0),
+    ///         Vec3::new(1.0, 0.0, 0.0),
+    ///     )))
+    /// };
+    /// let part = |y: f32, joint| RagdollPart {
+    ///     shape: &shape,
+    ///     body: BodySettings::new_dynamic().position(at(y)),
+    ///     joint,
+    /// };
+    /// let parts = [part(0.0, None), part(0.4, joint(0.2)), part(0.8, joint(0.6))];
+    /// // The root and the grandchild collide; each part and its parent do not.
+    /// let settings = RagdollSettings::with_self_collision(
+    ///     &skeleton,
+    ///     &parts,
+    ///     false,
+    ///     &RagdollSelfCollision::ExceptParentChild { also_disabled: Vec::new() },
+    /// )?;
+    /// assert_eq!(settings.part_count(), 3);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Fails with [`RagdollError::InvalidValue`] as they do, and when a listed pair repeats a
+    /// part or names a part index at or above the part count.
+    pub fn with_self_collision(
+        skeleton: &Skeleton,
+        parts: &[RagdollPart<'_>],
+        stabilize: bool,
+        self_collision: &RagdollSelfCollision,
+    ) -> Result<Self, RagdollError> {
+        Self::build(skeleton, parts, stabilize, self_collision)
     }
 
     fn build(
         skeleton: &Skeleton,
         parts: &[RagdollPart<'_>],
         stabilize: bool,
+        self_collision: &RagdollSelfCollision,
     ) -> Result<Self, RagdollError> {
         validate_parts(skeleton, parts)?;
+        let disabled = self_collision.disabled_pairs(&skeleton.parents)?;
         let provided_inertia = |part: &RagdollPart<'_>| {
             matches!(part.body.mass, Some(MassOverride::MassAndInertia { .. }))
         };
@@ -354,14 +456,14 @@ impl RagdollSettings {
         let count = parts.len() as u32;
         // SAFETY: the settings, the skeleton and the table are live; the settings take their own
         // reference to the skeleton. `count` is at most `MAX_JOINTS`, so the cast is exact and
-        // every sub group is below the table's size.
+        // every sub group is below the table's size. Every disabled pair names two different
+        // parts below `count`, as `GroupFilterTable::GetBit` asserts: skeleton parents precede
+        // their children and `disabled_pairs` checked the listed pairs.
         unsafe {
             JPH_RagdollSettings_SetSkeleton(settings.as_ptr(), skeleton.skeleton.as_ptr());
             JPH_RagdollSettings_ResizeParts(settings.as_ptr(), count as i32);
-            for a in 0..count {
-                for b in a + 1..count {
-                    JPH_GroupFilterTable_DisableCollision(table.as_ptr(), a, b);
-                }
+            for (a, b) in disabled {
+                JPH_GroupFilterTable_DisableCollision(table.as_ptr(), a, b);
             }
         }
         for (index, part) in parts.iter().enumerate() {

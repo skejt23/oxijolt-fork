@@ -3,8 +3,9 @@
 //!
 //! # Ragdolls and worlds
 //! A ragdoll's parts are ordinary bodies of the world, listed by [`RagdollRef::body_ids`], that
-//! the world destroys only with the ragdoll ([`PhysicsWorld::remove_ragdoll`]). Parts of one
-//! ragdoll never collide with each other; parts of different ragdolls do. For ragdolls in a
+//! the world destroys only with the ragdoll ([`PhysicsWorld::remove_ragdoll`]). By default parts
+//! of one ragdoll never collide with each other ([`RagdollSelfCollision`] chooses pairs that do);
+//! parts of different ragdolls do. For ragdolls in a
 //! second world next to the main one, create the static bodies of both from the same [`Shape`]
 //! handles; Jolt shapes are shared, not copied.
 //!
@@ -33,8 +34,8 @@ use crate::{Activation, BodyId, MotionType, PhysicsWorld, Quat, RVec3, RagdollEr
 pub use mapper::{MappedSkeleton, SkeletonMapper, TranslationLocks};
 use settings::JointKind;
 pub use settings::{
-    JointTransform, RagdollJoint, RagdollPart, RagdollSettings, Skeleton, SkeletonJoint,
-    SkeletonPose,
+    JointTransform, RagdollJoint, RagdollPart, RagdollSelfCollision, RagdollSettings, Skeleton,
+    SkeletonJoint, SkeletonPose,
 };
 pub use settle::SettleDetector;
 

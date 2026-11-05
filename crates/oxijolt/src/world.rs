@@ -455,6 +455,8 @@ impl PhysicsWorld {
         physics.numPositionSteps = settings.position_steps;
         physics.penetrationSlop = settings.penetration_slop;
         physics.speculativeContactDistance = settings.speculative_contact_distance;
+        physics.linearCastThreshold = settings.linear_cast_threshold;
+        physics.linearCastMaxPenetration = settings.linear_cast_max_penetration;
         // SAFETY: as above; `physics` is a live local that joltc copies field by field.
         unsafe { JPH_PhysicsSystem_SetPhysicsSettings(system.as_ptr(), &mut physics) };
 
@@ -581,6 +583,20 @@ impl PhysicsWorld {
     pub fn speculative_contact_distance(&self) -> f32 {
         // SAFETY: as in `velocity_steps`.
         unsafe { physics_settings(self.system.as_ptr()) }.speculativeContactDistance
+    }
+
+    /// Linear-cast threshold as a fraction of a shape's inner radius, as Jolt holds it
+    /// ([`WorldSettings::linear_cast_threshold`]).
+    pub fn linear_cast_threshold(&self) -> f32 {
+        // SAFETY: as in `velocity_steps`.
+        unsafe { physics_settings(self.system.as_ptr()) }.linearCastThreshold
+    }
+
+    /// Linear-cast maximum penetration as a fraction of a shape's inner radius, as Jolt holds it
+    /// ([`WorldSettings::linear_cast_max_penetration`]).
+    pub fn linear_cast_max_penetration(&self) -> f32 {
+        // SAFETY: as in `velocity_steps`.
+        unsafe { physics_settings(self.system.as_ptr()) }.linearCastMaxPenetration
     }
 
     /// Maximum number of bodies the world holds, read from Jolt (`PhysicsSystem::GetMaxBodies`)

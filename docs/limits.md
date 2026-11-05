@@ -429,6 +429,22 @@ asserts on. They cover these fixtures, not arbitrary scenes. A large speculative
 bodies, so size `WorldSettings::max_body_pairs` and `max_contact_constraints` for it
 ([capacity](#contact-constraint-capacity)).
 
+## Linear-cast settings
+
+`WorldSettings::linear_cast_threshold` and `linear_cast_max_penetration` are fractions of a
+shape's inner radius, finite and at least 0, with Jolt's defaults 0.75 and 0.25
+(`PhysicsSettings.h:56,59`). They are written once, in `PhysicsWorld::new`, with the
+[solver step counts](#solver-step-counts).
+
+Jolt casts a `MotionQuality::LinearCast` body only when its move in a collision step is longer
+than the threshold times the inner radius, and lets the cast body end at most the smaller of the
+penetration slop and the maximum penetration times the inner radius deep in what it hits
+(`PhysicsSystem.cpp:1664-1671`). Both products are only compared, so no upper bound is needed: a
+product that overflows to infinity means no move is long enough to cast (a dynamic body's shape
+has a positive inner radius, which Jolt asserts). `the_linear_cast_threshold_decides_which_moves_are_cast`
+sends a 4 cm plate at 18 m/s into a 2 cm wall: it is stopped with the default threshold and with 0,
+and passes through with 20.
+
 ## Accelerations
 
 `MAX_ACCELERATION` is `MAX_LINEAR_VELOCITY / PhysicsWorld::MIN_DELTA_TIME`, about 5e8 m/s². A larger

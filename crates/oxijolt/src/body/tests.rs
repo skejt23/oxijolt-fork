@@ -63,6 +63,14 @@ fn default_settings_match_jolt() {
             AllowedDofs::from_jph(JPH_BodyCreationSettings_GetAllowedDOFs(ptr)),
             ours.allowed_dofs
         );
+        assert_eq!(
+            JPH_BodyCreationSettings_GetNumVelocityStepsOverride(ptr),
+            ours.velocity_steps_override
+        );
+        assert_eq!(
+            JPH_BodyCreationSettings_GetNumPositionStepsOverride(ptr),
+            ours.position_steps_override
+        );
         assert_eq!(JPH_BodyCreationSettings_GetIsSensor(ptr), ours.sensor);
         assert_eq!(JPH_BodyCreationSettings_GetUserData(ptr), ours.user_data);
         assert!(ours.mass.is_none());
@@ -555,4 +563,41 @@ fn provided_principal_inertia_reaches_the_motion_properties() {
 fn provided_tensor_inertia_reaches_the_motion_properties() {
     let tensor = [[2.0, 0.5, 0.0], [0.5, 3.0, 0.0], [0.0, 0.0, 4.0]];
     check_provided_inertia_reaches_jolt(Inertia::Tensor(tensor), 1.0e-5);
+}
+
+#[test]
+fn solver_step_overrides_reach_the_creation_settings() {
+    assert!(ensure_initialized());
+    let shape = crate::Shape::new_sphere(0.5).unwrap();
+    for (velocity, position) in [(0, 0), (20, 4), (255, 255)] {
+        let settings = BodySettings::new_dynamic()
+            .velocity_steps_override(velocity)
+            .position_steps_override(position);
+        assert_eq!(settings.validate_values(), Ok(()));
+        let creation = CreationSettings::new(&shape, &settings).unwrap();
+        // SAFETY: the settings object is live and owned by `creation`; the getters only read it.
+        let read = unsafe {
+            (
+                JPH_BodyCreationSettings_GetNumVelocityStepsOverride(creation.as_ptr()),
+                JPH_BodyCreationSettings_GetNumPositionStepsOverride(creation.as_ptr()),
+            )
+        };
+        assert_eq!(read, (velocity, position));
+    }
+}
+
+#[test]
+fn solver_step_overrides_above_the_bound_are_refused() {
+    let above = limits::MAX_SOLVER_STEPS_OVERRIDE + 1;
+    for settings in [
+        BodySettings::new_dynamic().velocity_steps_override(above),
+        BodySettings::new_dynamic().position_steps_override(above),
+        BodySettings::new_dynamic().velocity_steps_override(u32::MAX),
+        BodySettings::new_dynamic().position_steps_override(u32::MAX),
+    ] {
+        assert!(
+            matches!(settings.validate_values(), Err(BodyError::InvalidValue(_))),
+            "{settings:?}"
+        );
+    }
 }
